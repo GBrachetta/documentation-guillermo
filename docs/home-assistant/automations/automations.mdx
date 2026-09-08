@@ -1,0 +1,343 @@
+# Automations
+
+## Rain - Open Windows
+
+- This automation is triggered when it starts raining and one of the windows or doors is open.
+  - It will send a notification to all phones with the list of open windows/doors.
+  - If it keeps raining, it will send a notification every 3 minutes until all windows/doors are closed or it stops raining.
+
+<details>
+<summary>Code</summary>
+
+```yaml
+alias: It's raining
+description: ''
+triggers:
+  - trigger: numeric_state
+    entity_id:
+      - sensor.gw1200a_rain_rate
+    for:
+      hours: 0
+      minutes: 0
+      seconds: 30
+    above: 0
+conditions:
+  - condition: or
+    conditions:
+      - condition: window.is_open
+        target:
+          entity_id:
+            - binary_sensor.attic_window_back
+            - binary_sensor.attic_window_laundry
+            - binary_sensor.attic_window_girls
+        options:
+          for: '00:00:00'
+          behavior: any
+      - condition: door.is_open
+        target:
+          entity_id:
+            - binary_sensor.office_office_door_sensor_door
+            - binary_sensor.bedroom_bedroom_door
+            - binary_sensor.pantry_pantry_door
+            - binary_sensor.dining_room_dining_room_door
+        options:
+          for: '00:00:00'
+          behavior: any
+actions:
+  - action: notify.send_message
+    metadata: {}
+    target:
+      entity_id:
+        - notify.iphone_15_guille
+        - notify.macbook_pro
+        - notify.ninas_iphone
+    data:
+      title: It's raining
+      message: >-
+        {% set windows = [
+          'binary_sensor.attic_window_back',
+          'binary_sensor.attic_window_laundry',
+          'binary_sensor.attic_window_girls',
+          'binary_sensor.office_office_door_sensor_door',
+          'binary_sensor.bedroom_bedroom_door',
+          'binary_sensor.pantry_pantry_door',
+          'binary_sensor.dining_room_dining_room_door'
+        ] %}
+
+        {% set open_windows = windows
+          | select('is_state', 'on')
+          | map('state_attr', 'friendly_name')
+          | list %}
+        Close {% if open_windows | length == 1 %}the {{ open_windows[0] }}{%
+        elif open_windows | length == 2 %}the {{ open_windows[0] }} and the {{
+        open_windows[1] }}{% else %}{{ open_windows[:-1] | map('regex_replace',
+        '^', 'the ') | join(', ') }} and the {{ open_windows[-1] }}{% endif %}
+  - delay:
+      minutes: 3
+  - repeat:
+      sequence:
+        - if:
+            - condition: numeric_state
+              entity_id: sensor.gw1200a_rain_rate
+              above: 0
+            - condition: or
+              conditions:
+                - condition: window.is_open
+                  target:
+                    entity_id:
+                      - binary_sensor.attic_window_back
+                      - binary_sensor.attic_window_girls
+                      - binary_sensor.attic_window_laundry
+                  options:
+                    behavior: any
+                - condition: door.is_open
+                  target:
+                    entity_id:
+                      - binary_sensor.office_office_door_sensor_door
+                      - binary_sensor.bedroom_bedroom_door
+                      - binary_sensor.dining_room_dining_room_door
+                      - binary_sensor.pantry_pantry_door
+                  options:
+                    behavior: any
+          then:
+            - action: notify.send_message
+              metadata: {}
+              target:
+                entity_id:
+                  - notify.iphone_15_guille
+                  - notify.macbook_pro
+                  - notify.ninas_iphone
+              data:
+                title: It's still raining!
+                message: >-
+                  {% set windows = [
+                    'binary_sensor.attic_window_back',
+                    'binary_sensor.attic_window_laundry',
+                    'binary_sensor.attic_window_girls',
+                    'binary_sensor.office_office_door_sensor_door',
+                    'binary_sensor.bedroom_bedroom_door',
+                    'binary_sensor.pantry_pantry_door',
+                    'binary_sensor.dining_room_dining_room_door'
+                  ] %}
+
+                  {% set open_windows = windows
+                    | select('is_state', 'on')
+                    | map('state_attr', 'friendly_name')
+                    | list %}
+                  You haven't closed {% if open_windows | length == 1 %}the {{
+                  open_windows[0] }}{% elif open_windows | length == 2 %}the {{
+                  open_windows[0] }} and the {{ open_windows[1] }}{% else %}{{
+                  open_windows[:-1] | map('regex_replace', '^', 'the ') |
+                  join(', ') }} and the {{ open_windows[-1] }}{% endif %} yet.
+          else:
+            - stop: Rain stopped or all doors/windows are closed.
+        - delay:
+            minutes: 3
+      while:
+        - condition: numeric_state
+          entity_id: sensor.gw1200a_rain_rate
+          above: 0
+        - condition: or
+          conditions:
+            - condition: window.is_open
+              target:
+                entity_id:
+                  - binary_sensor.attic_window_back
+                  - binary_sensor.attic_window_girls
+                  - binary_sensor.attic_window_laundry
+              options:
+                behavior: any
+            - condition: door.is_open
+              target:
+                entity_id:
+                  - binary_sensor.office_office_door_sensor_door
+                  - binary_sensor.bedroom_bedroom_door
+                  - binary_sensor.dining_room_dining_room_door
+                  - binary_sensor.pantry_pantry_door
+              options:
+                behavior: any
+mode: single
+```
+
+</details>
+
+## Good Night!
+
+- This automation is triggered when I plug the phone after 23:00.
+  - It will turn all lights off.
+  - If one of the girls is home, it will skip the lights in their room.
+  - It will lock all doors.
+  - It will arm the alarm.
+  - It will set the thermostat to 18ºC.
+  - It will close the curtains in the bedroom.
+
+<details>
+<summary>Code</summary>
+
+```yaml
+alias: Good Night!
+description: ''
+triggers:
+  - trigger: state
+    entity_id:
+      - sensor.iphone_15_guille_battery_state
+    to: Charging
+  - trigger: webhook
+    webhook_id: goodnight_charging_iPhone_guille_9f3k3
+    allowed_methods:
+      - POST
+    local_only: true
+conditions:
+  - condition: or
+    conditions:
+      - condition: time
+        after: '23:00:00'
+      - condition: time
+        before: '06:00:00'
+    enabled: true
+actions:
+  - action: light.turn_off
+    target:
+      entity_id: >
+        {% if is_state('person.giulia', 'home') or is_state('person.elisa',
+        'home') %}
+          {{ states.light | map(attribute='entity_id') | reject('eq', 'light.attic_girls_light') | list }}
+        {% else %}
+          all
+        {% endif %}
+    data: {}
+  - action: alarm_control_panel.alarm_arm_home
+    metadata: {}
+    target:
+      entity_id: alarm_control_panel.living_room_aqara_g3_security_system
+    data: {}
+    enabled: true
+  - action: lock.lock
+    metadata: {}
+    target:
+      entity_id:
+        - lock.smart_lock_pro
+        - lock.smart_lock_pro_2
+    data: {}
+    enabled: true
+  - action: climate.set_temperature
+    metadata: {}
+    target:
+      entity_id: climate.wireless_temperature_sensor_x
+    data:
+      temperature: 18
+  - action: cover.close_cover
+    metadata: {}
+    target:
+      entity_id:
+        - cover.aqara_roller_shade_driver_e1
+        - cover.aqara_roller_shade_driver_e1_2
+    data: {}
+mode: single
+```
+</details>
+
+## Office - Presence & Light
+
+- Someone enters the office and lux +< 10: turns both office lights on at 40%.
+- Someone leaves: turns both lights off.
+- Light drops below 15 lux + someone is present: turns both lights on at 40%.
+- Light rises above 20 lux: turns both lights off.
+- 10/15/20 lux thresholds: provide hysteresis to prevent rapid switching.
+
+<details>
+<summary>Code</summary>
+
+```yaml
+alias: Office - Presence & Light
+description: ''
+triggers:
+  - trigger: illuminance.crossed_threshold
+    id: light_above_20
+    target:
+      entity_id: sensor.office_office_presence_sensor_illuminance
+    options:
+      threshold:
+        type: above
+        value:
+          active_choice: number
+          number: 20
+  - trigger: occupancy.detected
+    id: people_enter
+    target:
+      entity_id: binary_sensor.office_office_presence_sensor_occupancy
+    options:
+      behavior: each
+      for: '00:00:00'
+  - trigger: occupancy.cleared
+    id: people_leave
+    target:
+      entity_id: binary_sensor.office_office_presence_sensor_occupancy
+    options:
+      behavior: each
+      for: '00:00:00'
+  - trigger: illuminance.crossed_threshold
+    id: light_below_15
+    target:
+      entity_id: sensor.office_office_presence_sensor_illuminance
+    options:
+      threshold:
+        type: below
+        value:
+          active_choice: number
+          number: 15
+conditions: []
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: people_enter
+          - condition: numeric_state
+            entity_id: sensor.office_office_presence_sensor_illuminance
+            below: 10
+        sequence:
+          - action: light.turn_on
+            target:
+              entity_id:
+                - light.office_desk
+                - light.office_studio
+            data:
+              brightness_pct: 40
+      - conditions:
+          - condition: trigger
+            id: people_leave
+        sequence:
+          - action: light.turn_off
+            target:
+              entity_id:
+                - light.office_desk
+                - light.office_studio
+      - conditions:
+          - condition: trigger
+            id: light_below_15
+          - condition: occupancy.is_detected
+            target:
+              entity_id: binary_sensor.office_office_presence_sensor_occupancy
+            options:
+              behavior: any
+              for: '00:00:00'
+        sequence:
+          - action: light.turn_on
+            target:
+              entity_id:
+                - light.office_desk
+                - light.office_studio
+            data:
+              brightness_pct: 40
+      - conditions:
+          - condition: trigger
+            id: light_above_20
+        sequence:
+          - action: light.turn_off
+            target:
+              entity_id:
+                - light.office_desk
+                - light.office_studio
+mode: single
+```
+</details>

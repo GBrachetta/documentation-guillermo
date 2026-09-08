@@ -1,0 +1,443 @@
+# G3 Camera Hub
+
+## What's currently working 
+
+1. Install the following on Home Assistant
+
+   - **Go2rtc**
+     1. Settings/Apps/Install App/Repositories - Add `https://github.com/AlexxIT/hassio-addons`
+     2. Settings/Apps/Install => Search for Go2rtc, install the first option
+   - **Webrtc camera** (Install via HACS)
+
+2. Remove the camera from Apple Home
+
+3. The camera will be automatically discovered by Home Assistant: add it
+
+4. Go2rtc will **not yet** see it available to pair under *Add*, but a long *HomeKit stream URL* will be available under *Add => Home Assistant*
+
+5. Add the following in `config` in Go2rtc
+
+   ```yaml
+   streams:
+       Camera-Hub-G3-C2C0: # The name you want to give your camera
+           - homekit://###.###.###.###:#####... # The long URL from step 4
+           - ffmpeg:Camera-Hub-G3-C2C0:#audio=aac#audio=opus  # optional audio transcoding - Camera name must match
+
+   log:
+       level: trace # Optional
+   ```
+
+6. Add a `Manual Card` and configure it as follows:
+
+   ```yaml
+   type: picture-elements
+   image: >-
+     data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16
+     9'/%3E
+   elements:
+     - type: custom:webrtc-camera
+       url: Camera-Hub-G3-C2C0
+       mode: webrtc,webrtc/tcp
+       style:
+         top: 50%
+         left: 50%
+         width: 100%
+         height: auto
+         z-index: 0
+       ui: false
+     - type: state-icon
+       entity: binary_sensor.living_room_aqara_g3_motion_sensor
+       style:
+         left: 25px
+         bottom: 0px
+   ```
+
+7. Bridge it back to Apple Home
+
+   - Add the following to the config in `go2rtc`
+
+   ```yaml
+   homekit:
+     Camera-Hub-G3-XXXX:
+   ```
+
+   THe complete config will look similar to this:
+
+   ```yaml
+     streams:
+       Camera-Hub-G3-C2C0: # The name you want to give your camera
+         - homekit://###.###.###.###:#####... # The long URL from step 4
+         - ffmpeg:Camera-Hub-G3-C2C0:#audio=aac#audio=opus  # optional audio transcoding - Camera name must match
+
+     homekit:
+       Camera-Hub-G3-C2C0: # Use the same camera entity name you used above
+
+     log:
+       level: trace # Optional
+      ```
+
+     After doing this, a new HomeKit device will be automatically created on Home Assistant.
+     **Don't add it to Home Assistant**
+
+   - On the iPhone, open **Apple Home => Add accessory => More options** and the new HomeKit device from Home Assistant will be visible there.
+   - Add it, use the generic Go2rtc pairing code `19550224` and the camera will be added it.
+   - All original functionality should be present again on Apple Home: Camera, 2-way talk, sensors, Alarm panel.
+
+### Still not working great
+
+The *preview* video thumbnail, for example in the `Security` tab or in the zone where the camera was assigned, still falls to MJPEG, so it not always loads, unlike the `RTC` stream on the card.
+
+## Method 1 (working)
+
+Currently this is a working Installation
+
+- Free camera from Apple HomeKit
+- Go2rtc
+  - Installed it via settings/repositories/add `https://github.com/AlexxIT/hassio-addons`
+  - Then go back to Apps/install app, search for go2rtc
+  - Pair it via `Add` in the app
+
+(Didn't pair it via HomeKit when discovered by HA)
+
+Once paired, modified the `config` with the YAML below:
+
+```yaml
+streams:
+    Camera-Hub-G3-C2C0:
+        - homekit://192.168.68.54:38159?device_id=AA:1E:B1:42:B9:37&device_public=b2531c665a5c0cf1e548ab21dcf7152d805e4fe61906b7213f5a48ffc601553c&client_id=7314288f-5113-0019-58d7-35378b75a7e8&client_private=71889734879f6560f1213992f3f3677b02d6249baee8056609bb56bc810d45dfa2867f1e93545f670d014c0115df597cc17bef9e872247c0a692ba1f9040b9b1
+        - ffmpeg:Camera-Hub-G3-C2C0:#audio=aac#audio=opus  # optional audio transcoding
+
+log:
+    level: trace
+```
+
+- Installed `webRTC Camera` via `HACS`
+- When added the new entry, opted for the second option and gave it the following URL: `http://192.168.68.81:1984`
+- Added the webRTC card in a Dahsboard, and configured as:
+
+```yaml
+type: custom:webrtc-camera
+url: Camera-Hub-G3-C2C0 # This is the same name of the stream present in the config of `go2rtc`
+```
+
+## Method 2 (working)
+
+- Unpair the camera from Apple Home
+- Add it to HA when discovered
+- Go2rtc will not see it available to pair under `Add`, but the long HomeKit stream URL will be available under Add/Home Assistant
+- Use YAML in config as in Method 1
+
+```yaml
+streams:
+    Camera-Hub-G3-C2C0:
+        - homekit://192.168.68.54:37369?client_id=502d04fd-cd25-4c28-8e02-f7da865125ac&client_private=30223a729e1899060653bfb8fe196a35481222a00b225936f49ce7072ace6ad72b439f29c43e54ba4d0605f921b036816047a035383d9a435e12fcb7c04421bf&device_id=AA:1E:B1:42:B9:37&device_public=b2531c665a5c0cf1e548ab21dcf7152d805e4fe61906b7213f5a48ffc601553c
+        - ffmpeg:Camera-Hub-G3-C2C0:#audio=aac#audio=opus  # optional audio transcoding
+
+log:
+    level: trace
+```
+
+I tweaked the camera view to add the sensor, with a `manual` card
+
+```yaml
+type: picture-elements
+image: >-
+  data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16
+  9'/%3E
+elements:
+  - type: custom:webrtc-camera
+    url: Camera-Hub-G3-C2C0
+    mode: webrtc,webrtc/tcp
+    style:
+      top: 50%
+      left: 50%
+      width: 100%
+      height: auto
+      z-index: 0
+    ui: false
+  - type: state-icon
+    entity: binary_sensor.living_room_aqara_g3_motion_sensor
+    style:
+      left: 25px
+      bottom: 0px
+
+
+```
+
+## Method 3 (only working with MJPEG stream) 
+
+Folowed [this link](https://forum.aqara.com/t/tutorial-integrating-aqara-g3-into-home-assistant-with-video-ptz/183357)
+
+## Summary by ChatGPT
+
+AQARA G3 — HOME ASSISTANT + WEBRTC + APPLE HOME
+
+### Goal
+
+Have the Aqara Camera Hub G3 available simultaneously in:
+
+- Home Assistant, with a live stream using WebRTC.
+- Apple Home, with a working live stream.
+
+The G3 is paired with Home Assistant. Go2rtc acts as a HomeKit proxy and exposes the camera back to Apple Home.
+
+FINAL ARCHITECTURE
+
+Aqara G3 => HomeKit => Home Assistant => Go2rtc => HomeKit proxy => Apple Home
+
+At the same time:
+
+Aqara G3 => Go2rtc => WebRTC => Home Assistant
+
+WHY THIS WAS NECESSARY
+
+The Aqara G3 was initially paired with Apple Home.
+
+It was removed from Apple Home and then paired with Home Assistant using HomeKit.
+
+The resulting Home Assistant camera entity was `camera.living_room_camera_hub_g3_c2c0`
+
+The camera worked in Home Assistant using WebRTC, however, exposing that HA camera through the normal Home Assistant HomeKit Bridge caused the camera to appear in Apple Home without a working live stream.
+
+The solution was to use go2rtc's HomeKit proxy instead of Home Assistant's normal HomeKit Bridge for the camera.
+
+### GO2RTC CONFIGURATION
+
+The working go2rtc configuration is:
+
+```yaml
+streams:
+  Camera-Hub-G3-C2C0:
+    - homekit://192.168.68.54:37369?client_id=xxxxxxx
+    - ffmpeg:Camera-Hub-G3-C2C0:#audio=aac#audio=opus
+
+homekit:
+  Camera-Hub-G3-C2C0:
+
+log:
+  level: trace
+```
+
+### IMPORTANT
+
+The actual client_id must be retained. It is masked above as xxxxxxx for this documentation.
+
+### WHAT THE CONFIGURATION DOES
+
+- The homekit:// line imports the G3's existing HomeKit stream into go2rtc.
+- The ffmpeg line provides audio transcoding: `ffmpeg:Camera-Hub-G3-C2C0:#audio=aac#audio=opus`
+- The homekit section creates a new HomeKit accessory in go2rtc using the same stream.
+- The stream name must be identical: `Camera-Hub-G3-C2C0` in both the streams section and the homekit section.
+
+### IMPORTANT PAIRING CONCEPT
+
+- The G3 itself is paired with Home Assistant.
+- Apple Home is NOT paired directly to the G3.
+- Instead, Apple Home is paired to the HomeKit accessory created by go2rtc.
+
+Therefore:
+
+G3 => Home Assistant => go2rtc => Apple Home
+
+### ADDING THE GO2RTC CAMERA TO APPLE HOME
+
+1. Add the following to the go2rtc configuration:
+
+     ```yaml
+      homekit:
+         Camera-Hub-G3-C2C0:
+     ```
+
+2. Save the configuration.
+3. Restart go2rtc.
+4. Open the go2rtc web interface.
+5. The HomeKit accessory should appear.
+
+The working installation showed:
+
+```yaml
+go2rtc-498F    go2rtc/1.9.14
+homekit://192.168.68.81:1984?device_id=1B:C7:A9:32:32:A2&feature=0&status=1
+```
+
+"go2rtc-498F" is the HomeKit accessory created by go2rtc.
+
+It is NOT the Aqara G3 itself.
+
+The 192.168.68.81:1984 address is the go2rtc server.
+
+### PAIRING WITH APPLE HOME
+
+On the iPhone:
+
+1. Open the Apple Home app.
+2. Tap "+".
+3. Select "Add Accessory".
+4. Look for the go2rtc HomeKit accessory.
+5. Select it.
+6. Complete the HomeKit pairing.
+
+The default go2rtc HomeKit PIN is:
+
+`19550224`
+
+If a custom PIN is configured in go2rtc, use that instead.
+
+The default PIN was successfully used in this setup.
+
+### DO NOT DO THIS
+
+Do not add the following URL to Home Assistant:
+
+`homekit://192.168.68.81:1984...`
+
+That URL identifies the go2rtc HomeKit proxy.
+
+It is the accessory that Apple Home should pair with.
+
+### DO NOT USE HOME ASSISTANT'S NORMAL HOMEKIT BRIDGE FOR THE G3
+
+The setup that did NOT work correctly was:
+
+Aqara G3 => Home Assistant => Home Assistant HomeKit Bridge => Apple Home
+
+The camera appeared in Apple Home, but the live stream did not work.
+
+The working setup is:
+
+Aqara G3 =>Home Assistant / HomeKit => go2rtc => go2rtc HomeKit proxy => Apple Home
+
+### AUDIO
+
+The configuration contains `ffmpeg:Camera-Hub-G3-C2C0:#audio=aac#audio=opus`
+
+This provides audio transcoding for the stream.
+
+It should be retained in the working configuration.
+
+### FINAL WORKING CONFIGURATION
+
+   ```yaml
+   streams:
+      Camera-Hub-G3-C2C0:
+
+      - homekit://192.168.68.54:37369?client_id=xxxxxxx
+      - ffmpeg:Camera-Hub-G3-C2C0:#audio=aac#audio=opus
+
+   homekit:
+      Camera-Hub-G3-C2C0:
+
+   log:
+      level: trace
+   ```
+
+### FINAL SETUP
+
+G3:
+Paired with Home Assistant
+
+Home Assistant:
+Uses the G3 camera entity
+camera.living_room_camera_hub_g3_c2c0
+
+go2rtc:
+Imports the G3 through HomeKit
+Provides WebRTC to Home Assistant
+Creates a HomeKit proxy for Apple Home
+
+Apple Home:
+Paired with the go2rtc HomeKit proxy
+Shows the G3 with a working live stream
+
+RESULT
+
+Home Assistant:
+G3 live stream = WORKING
+
+WebRTC:
+WORKING
+
+Apple Home:
+G3 visible = YES
+Live stream = WORKING
+
+G3 paired directly to Apple Home:
+NO
+
+G3 paired to Home Assistant:
+YES
+
+go2rtc HomeKit proxy:
+YES
+
+IMPORTANT
+
+If this setup is working, do not unpair the G3 from Home Assistant.
+
+The key to the working setup is:
+
+G3 → Home Assistant → go2rtc → HomeKit proxy → Apple Home
+
+The HomeKit proxy allows Apple Home to access the camera while the original G3/Home Assistant pairing remains intact.
+
+## Shorter explanation
+
+### Aqara G3 → Home Assistant + WebRTC + Apple Home
+
+#### Working setup
+
+The Aqara G3 is paired with **Home Assistant**, not directly with Apple Home.
+
+go2rtc imports the G3's HomeKit stream and creates a HomeKit proxy that is paired with Apple Home.
+
+**Result:**
+
+G3 → Home Assistant → go2rtc → Apple Home
+
+The G3 continues to work in Home Assistant through WebRTC.
+
+### go2rtc config
+
+```yaml
+streams:
+  Camera-Hub-G3-C2C0:
+    - homekit://192.168.68.54:37369?client_id=xxxxxxx
+    - ffmpeg:Camera-Hub-G3-C2C0:#audio=aac#audio=opus
+
+homekit:
+  Camera-Hub-G3-C2C0:
+
+log:
+  level: trace
+```
+
+Keep the real `client_id` from the existing configuration.
+
+### Add to Apple Home
+
+1. Save the go2rtc configuration.
+2. Restart go2rtc.
+3. In go2rtc, the HomeKit proxy appears as something similar to:
+   `go2rtc-498F`
+4. On the iPhone, open **Apple Home**.
+5. Tap **+ → Add Accessory**.
+6. Select the **go2rtc** accessory.
+7. Enter the go2rtc HomeKit PIN:
+   `19550224`
+8. Finish the pairing.
+
+### Important
+
+Do **not** expose the G3 through Home Assistant's normal HomeKit Bridge.
+
+Apple Home should connect to the **go2rtc HomeKit proxy**.
+
+The G3 remains paired with Home Assistant.
+
+### Final result
+
+- G3 in Home Assistant: **working**
+- WebRTC in HA: **working**
+- G3 in Apple Home: **working**
+- Live stream in Apple Home: **working**
+- Direct G3 → Apple Home pairing: **not required**

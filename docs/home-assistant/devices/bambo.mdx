@@ -1,0 +1,20 @@
+# Bambo
+
+### Vacuum Robot Model: LuBlueLu `SL60D` (Tuya)
+
+1. Create an account in `https://iot.tuya.com/` and create a project in the `Cloud Development` section.
+2. Select `Central Europe` as the region and select `Smart Home` as the development method.
+3. Click on `Devices` and select `Link App Account`. 
+4. Add account. A qr code will be generated. Scan it with the Tuya Smart app and link your account.
+5. From that linked account, select your device and select `UID`. Copy it and save it for later.
+6. From the cloud project overview, select `Access ID/Client ID` and `Access Secret/Client Secret`. Copy them and save them for later.
+7. On Home Assistant, Download and Install repository `https://github.com/xZetsubou/hass-localtuya/` through `HACS`.
+8. Install the integration through `Settings > Devices and Services > Add integration > LocalTuya`
+9. Add a hub from that integration, use the parameters copied from the Tuya IoT cloud project:
+    - Data Center Region: `Central Europe`
+    - `Client ID`: `Access ID/Client ID` copied from the Tuya IoT cloud project
+    - `Client Secret`: `Access Secret/Client Secret` copied from the Tuya IoT cloud project
+    - `User ID`: `UID` copied from the Tuya IoT cloud project
+    - `Username` (email used to create the Tuya IoT account)
+10. Click on `Next` and select the device that will automatically be discovered. 
+11. Select the integration to automatically configure the device.
