@@ -1,1 +1,215 @@
 # G410 Doorbell
+```
+Let's do this carefully and please pay attention to your answers.
+
+I activated RTSP on my Aqara G410.
+It created 3 streams:
+
+
+Channel1 (1200P) - rtsp://192.168.xx.xx:8554/ch1
+Channel2 (960P) - rtsp://192.168.xx.xx:8554/ch2
+Channel1 (480P) - rtsp://192.168.xx.xx:8554/ch3
+
+Then I opened Go2RTC on Home Assistant, and in the config, behind the config for my Aqara G3, I added:
+
+streams:
+    Camera-Hub-G3-C2C0:
+        - homekit://192.168.68.54:37369?client_id=xxxxxx
+        - ffmpeg:Camera-Hub-G3-C2C0:#audio=aac#audio=opus  # optional audio transcoding
+
+    Doorbell-main: # Added this line
+        - rtsp://674:741@192.168.68.52:8554/ch1 # Added this line
+
+    Doorbell-sub: # Added this line
+        - rtsp://674:741@192.168.68.52:8554/ch3 # Added this line
+
+Now I want to add the camera entity, and I want it to play smoothly (it streams smoothly on VLC) both on a custom card that I will create but ALSO (and this is important) when I create the entity I want to see the thumbnail preview performing well.
+```
+
+### ChatGPT
+
+Yes. The important distinction is that Go2RTC can be the source for both the HA camera entity and your custom card, and if you want the HA entity’s thumbnail to perform well, I would not add the raw RTSP URL directly as a generic camera integration.
+
+Your Go2RTC configuration is already a good starting point:
+
+```yaml
+streams:
+  Camera-Hub-G3-C2C0:
+    - homekit://192.168.68.54:37369?client_id=xxxxxx
+    - ffmpeg:Camera-Hub-G3-C2C0:#audio=aac#audio=opus
+
+  Doorbell-main:
+    - rtsp://674:741@192.168.68.52:8554/ch1
+
+  Doorbell-sub:
+    - rtsp://674:741@192.168.68.52:8554/ch3
+```
+
+What I recommend
+
+Create the HA camera entity using Go2RTC's WebRTC/MSE stream, rather than having HA independently connect to the Aqara RTSP stream.
+
+The architecture should be:
+
+```
+Aqara G410
+    │
+    │ RTSP
+    ▼
+Go2RTC
+    │
+    ├── Doorbell-main  ← 1200P
+    │
+    └── Doorbell-sub   ← 480P
+          │
+          ▼
+   Home Assistant
+          │
+          ├── Camera entity thumbnail
+          │
+          └── Custom WebRTC card
+```
+
+For the thumbnail, however, there is an important issue: HA's normal camera entity picture/thumbnail mechanism is not necessarily the same thing as the live WebRTC stream. We therefore need to configure this so that HA can obtain an efficient still image while the live view uses Go2RTC.
+
+I would proceed in two stages, because this lets us verify each part rather than changing several things at once:
+
+Create the camera entity pointing at Go2RTC.
+Verify that the entity's thumbnail updates correctly and efficiently.
+Then configure the custom card to use Doorbell-main/Doorbell-sub through Go2RTC for smooth live video.
+
+One thing I would not do yet is add the Aqara RTSP URL to HA through the generic Generic Camera integration. That can result in HA treating the RTSP feed as a conventional camera source, which isn't what you want if the objective is to make Go2RTC the central stream handler.
+
+Also, your choice of:
+
+Doorbell-main → ch1 (1200P)
+Doorbell-sub → ch3 (480P)
+
+is useful. The 480P stream is particularly suitable for thumbnails, while the 1200P stream is appropriate for the actual live view.
+
+### Guillermo
+
+```
+Give me the exact HA configuration for creating the entity from my existing Go2RTC setup, including the thumbnail/live-stream arrangement
+```
+
+### ChatGPT
+
+Yes. I checked the current Home Assistant and go2rtc documentation first, because there is an important detail here: you do not need a second WebRTC server or the old RTSPtoWebRTC integration. Current HA has native go2rtc/WebRTC support.
+
+For your setup, I would make the 480P Go2RTC stream the camera entity's source, while retaining the 1200P stream for the high-quality live view in your custom card.
+
+However, there is one limitation: a single HA camera entity has one stream_source. HA can generate stills from that stream, but it does not have a separate native "thumbnail stream = ch3, live stream = ch1" setting.
+
+So the cleanest configuration is actually to create two camera entities:
+
+- camera.doorbell → 1200P, for live video
+- camera.doorbell_sub → 480P, for the lightweight thumbnail
+
+Both go through your Go2RTC instance.
+
+1. Keep your Go2RTC configuration
+
+I would leave this exactly as you have it:
+
+```yaml
+streams:
+  Camera-Hub-G3-C2C0:
+    - homekit://192.168.68.54:37369?client_id=xxxxxx
+    - ffmpeg:Camera-Hub-G3-C2C0:#audio=aac#audio=opus
+
+  Doorbell-main:
+    - rtsp://674:741@192.168.68.52:8554/ch1
+
+  Doorbell-sub:
+    - rtsp://674:741@192.168.68.52:8554/ch3
+```
+
+Go2RTC exposes named streams back out as RTSP at:
+
+```yaml
+rtsp://<go2rtc-host>:8554/<stream-name>
+```
+so, for example, Doorbell-main becomes:
+
+```
+rtsp://<HA-IP>:8554/Doorbell-main
+```
+
+assuming your Go2RTC add-on is listening on port 8554.
+
+2. Create the main camera entity
+
+Go to:
+
+Settings → Devices & services → Add integration → Generic Camera
+
+For the main camera enter:
+
+Stream Source
+
+```
+rtsp://127.0.0.1:8554/Doorbell-main
+```
+
+If Go2RTC is running as the HA add-on and 127.0.0.1 is accepted from the Generic Camera integration in your installation, this is the preferable route because it stays entirely inside the HA machine.
+
+If that does not connect, use the HA VM's IP address instead:
+
+```
+rtsp://192.168.68.81:8554/Doorbell-main
+```
+
+Do not put the Aqara RTSP URL here.
+
+The chain should be:
+
+```
+G410
+ ↓
+rtsp://192.168.68.52:8554/ch1
+ ↓
+Go2RTC
+ ↓
+rtsp://127.0.0.1:8554/Doorbell-main
+ ↓
+Generic Camera
+ ↓
+camera.doorbell
+```
+
+This means HA is consuming the stream from Go2RTC, not directly from the Aqara.
+
+The Generic Camera integration explicitly supports an RTSP stream source, and HA's stream integration can generate still images from that stream when necessary.
+
+Name
+
+Use something like: `Doorbell`
+
+You should then get something like: `camera.doorbell`
+
+3. Create the sub-stream entity
+
+## My Setup
+
+I activated RTSP on the G410 (powered with 12V power source)
+Checked the rtsp links generated in the Aqara app
+In Go2rtc, added under streams:
+
+```yaml
+streams:
+    Doorbell-main:
+        - rtsp://<username>:<password>@192.168.xx.xx:8554/ch1 # This is the 1200p stream
+
+    Doorbell-sub:
+        - rtsp://<username>:<password>@192.168.68.52:8554/ch3 # This is the 480p stream
+```
+
+I then added `settings/Add integration/Generic camera`
+
+- Stream source: `rtsp://192.168.68.81:8554/Doorbell-main`
+- Still Image URL: `http://192.168.68.81:1984/api/frame.jpeg?src=Doorbell-sub`
+- Username / Password: Received from the Aqara app where the rtsp streams are displayed.
+
+Then Name the camera, and an entity will be created.
+This entity uses the 480p stream for the thumbnail, while using 1200p for the live video.

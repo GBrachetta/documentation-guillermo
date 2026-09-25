@@ -1,0 +1,212 @@
+# Relay 2 points
+
+:::tip[Question]
+I have 2 light switches, they both control the same two lights: when I turn on/off one of the switches, a light in the pantry and a light in the garage turn on/off. The switch in the garage does the same for the two lights.
+In those two switches boxes there are 1 brown cable and 2 black cables. Both look the same wiring.
+My question is: if I have no neutral or no space in the switch boxes, where on the lights themselves (ceiling) can I put a relay to control them via zigbee? Or will I need 1 or 2 relays (1 per light) and if I use one relay per light will I be able to turn them on/off via zigbee without changing any other wiring for example on the switches?
+:::
+
+:::info[Claude]
+Given what you're describing, this comes down to one core fact: with only a brown wire and two black wires in each switch box, you have **no neutral at the switches** — that's classic two-way (3-way) switch wiring, where brown is typically the incoming permanent live and the two blacks are the traveler wires running between the two switches. There's simply nothing to tap for a switch-based relay there, so the switch boxes are out regardless of space.
+
+**Where the relay has to go:** at the ceiling, in the junction box / ceiling rose for each light. That's where neutral is guaranteed to be present (the lamp itself needs live + neutral to actually light up), along with the permanent live feed and the switched-live wire coming down from the switch loop.
+
+**One relay or two — it depends on how the ceiling wiring is actually laid out**, not on the switches:
+
+- **If the switched-live and neutral simply loop from one light to the other** (i.e. only the first ceiling rose gets permanent live + neutral, and a 2-core cable then carries switched-live + neutral onward to the second light), then you can only cleanly fit **one relay**, at that first rose, intercepting the switched-live before it splits to both lamps. Both lights would keep operating together, just now switchable via Zigbee too — which matches how they behave today anyway.
+
+- **If each ceiling rose independently receives its own permanent live and neutral** (common in some Dutch/Belgian installs where each point is wired back individually), you can fit **two relays**, one per light, each wired L(permanent)-in → relay → Load-out to the lamp, N straight through. That gives you independent Zigsee control of each light. The switched-live wire that currently joins both lights together would need to be capped off at each rose (or, if your relay model has an "S" sense input, like most Sonoff ZBMINI-family units, you can wire it in there so the existing switches still act as manual triggers, just no longer carrying load current directly).
+
+Either way, **you won't need to touch the switch boxes at all** — the switches stay wired exactly as they are; all the work happens up at the ceiling roses. What you will need to do is open up both ceiling fixtures and trace exactly which wires land there, since that's what determines whether you're looking at one relay or two.
+
+A couple of practical notes:
+- Don't use a "no-neutral" relay design here — since neutral is present at the ceiling, a standard neutral relay (Sonoff ZBMINI/ZBMINI-L2, Shelly 1 Mini Gen3, Aqara equivalents, etc.) is the right tool and is more reliable than the no-neutral bulb-leakage type.
+- If you want to keep manual switch control working after installing relays, look specifically for a relay with a physical switch "S" input — that lets it detect the switch position without routing mains through it, so you get both manual and Zigbee control without any extra wiring changes.
+
+If you can tell me what you find inside the two ceiling roses (how many cables, how many cores each, and whether one feeds into the other), I can tell you definitively whether you're looking at one relay or two.
+:::
+
+:::tip[Question]
+Is it possible to start with just 1 of the roses and eventually do the second at a later time?
+:::
+
+:::info[Claude]
+Yes, and it's actually a pretty natural way to phase this, in both scenarios:
+
+**If it turns out to be the "shared loop" case** (permanent live + neutral only at the first rose, with switched-live + neutral carrying on to the second light): doing that first rose *is* the whole job. Since it intercepts the switched-live before it splits to both lamps, installing one relay there gives you Zigbee control of **both lights together**, immediately — there's nothing left to do at the second rose unless you later decide you want to control the two lights independently. That would mean going back in and physically separating the switched-live wire between the two roses (cutting the shared branch and running each light its own switched-live/relay feed) — a bit more invasive, but perfectly doable as phase two, and it wouldn't disturb what you already installed.
+
+**If it turns out to be the "independent feed" case** (each rose has its own permanent live + neutral): you can convert just one light now and leave the other completely untouched. You'd cap the switched-live wire at that one rose, wire in the relay (L-in, N, Load-out to the lamp), and the physical switches keep working normally for the second light exactly as before, since its branch of the switched-live/neutral loop is undisturbed. Later, you do the same at the second rose. No interaction between the two — doing one doesn't force or complicate the other.
+
+Either way, whichever rose you start with, opening it up will also answer the "one relay or two" question from before — so starting with one is a good move regardless.
+:::
+
+:::tip[Question]
+> So how many wires do I actually need to feed the relay? Just brown and blue?
+:::
+
+:::info[Claude]
+Not quite — you need three connections at minimum, not two:
+
+1. **Live in (brown)** — permanent live, from the supply
+2. **Neutral (blue)** — needed by the relay to power its own Zigbee radio, and passes straight through to the lamp
+3. **Load out** — a wire (often also brown, sometimes marked separately or a different color like red) going from the relay's output terminal to the lamp itself
+
+So it's not "feed it 2 wires," it's "the relay sits *in line* between the incoming live and the lamp." Live comes in on one terminal, neutral connects through, and a separate wire carries the switched output back out to the light — that output wire is what actually turns the lamp on and off. Blue (neutral) is shared/looped through, not something the relay switches.
+
+If you also want to wire in the old switched-live as a manual-switch sense input (the "S" terminal some relays have, so your physical switch still does something), that's a **fourth** wire — the black one currently going down to the switches — landed on the S terminal instead of being capped off. That one's optional and only relevant if the relay model supports it.
+
+So minimum wiring: brown (live in) + blue (neutral) + one more wire out to the lamp. Not just two.
+:::
+
+:::tip[Question]
+> So I would basically remove the live and neutral from the lamp and plug those 2 to the relay, and from the relay the S connector will go alone to the lamp?
+:::
+
+:::info[Claude]
+Close, but the terminals are mixed up — let me clarify:
+
+- **Live (brown)** goes into the relay's **L / Live-in** terminal
+- **Neutral (blue)** goes into the relay's **N** terminal — the relay needs this just to power itself, and it also needs to reach the lamp's neutral terminal (either by looping through the relay's N connection or just teeing off the same neutral wire before it reaches the relay)
+- The relay's **Load / Out** terminal (NOT the "S" terminal) is what then wires to the lamp's live-in terminal — this is the wire that actually gets switched on and off
+
+**S is not an output — it's an input.** It's where you'd land the old switched-live wire coming down from your physical switches, purely so the relay can *sense* whether someone flipped the switch (a small signal, not mains power to the lamp). It has nothing to do with feeding the lamp.
+
+So the correct picture is:
+
+| Wire | Goes to |
+|---|---|
+| Brown (permanent live) | Relay's **L** terminal |
+| Blue (neutral) | Relay's **N** terminal, and also to the lamp's neutral |
+| New wire, relay's **Load/Out** terminal | Lamp's live terminal |
+| (Optional) old switched-live from switches | Relay's **S** terminal, if you want the physical switch to still do something |
+
+The lamp ends up with two connections either way: neutral (from the incoming supply, not switched) and live (from the relay's Load output, which is switched). The relay sits *between* the incoming live and the lamp — it doesn't just take two wires in and send one wire out; neutral has to reach the lamp too, it just doesn't pass through the switching part of the relay.
+:::
+
+:::tip[Question]
+> So that means that the lamp will NOT have anymore a blue and brown (N and L) wires attached to it?
+:::
+
+:::info[Claude]
+The lamp still has its own brown (L) and blue (N) wires — those don't disappear, they're the lamp fitting's own two tails. What changes is **what those two wires connect to** inside the junction box.
+
+Before:
+- Lamp's blue (N) → joins the incoming neutral circuit wire
+- Lamp's brown (L) → joins the switched-live wire coming from the switches
+
+After adding the relay:
+- Lamp's blue (N) → still joins the incoming neutral circuit wire, same as before (nothing changes here)
+- Lamp's brown (L) → now joins the relay's **Load/Out** wire instead of the old switched-live wire
+
+So the lamp keeps both its wires attached exactly as before — the only thing that moves is which wire its live tail is spliced to. The old switched-live wire from the switches gets disconnected from the lamp and either capped off, or (optionally) redirected into the relay's S terminal if you want to keep the physical switch functional as a sense input.
+
+Think of it as: the relay inserts itself into the live path between "incoming live" and "lamp," while neutral just carries straight through untouched.
+:::
+
+:::tip[Question]
+> I don't quite understand it. Would it be possible to have a diagram with the wires and the position of the relay?
+:::
+
+:::info[Claude]
+![diagram](/img/relay_wiring_diagram.png)
+
+Wires by color: brown/dark (live in and load-out) and blue (neutral) are the two active connections; gray dashed is the optional switch-sense wire.
+
+Walking through it: the incoming brown live lands on the relay's **L** terminal. The incoming blue neutral lands on the relay's **N** terminal and comes straight back out the other side to the lamp's neutral — it just passes through, untouched by the switching. The relay's **load out** terminal is a brand-new wire that runs to the lamp's live tail — that's the connection that actually gets switched on and off. The lamp itself never loses its two original wires; its live tail just now lands on the relay's output instead of the old switched-live from the wall.
+
+The dashed gray line at the bottom is optional — only relevant if your relay has an **S** terminal and you want to keep the physical switch doing something. That's where the old switched-live wire from the switch loop would go, purely as a sense signal, not as a power feed.
+:::
+
+:::tip[Question]
+I have 2 relays:
+* Sonoff Mini extreme gen 5. This has N, L, L, Lout, Lout and S1
+* Shelly 1 Gen4. I see 6 connectors in it: one marked "O", another marked "I", another marked "SW", another marked "12v" another marked "L" and another marked "N"
+:::
+
+:::info[Claude]
+Good — both of these map directly onto the concept from the diagram, they just label things slightly differently.
+
+**Sonoff Mini Extreme Gen5** — N / L / L / Lout / Lout / S1
+
+- **L (both)** — permanent live in. There are two screw terminals for it, that's just to make wiring easier (e.g. daisy-chaining or fitting two wires); they're internally the same connection. One wire in is enough.
+- **N** — neutral, passes through to the lamp
+- **Lout (both)** — the switched output, same story: two screws, same connection. One wire out to the lamp's live is enough.
+- **S1** — the optional sense input for your old switch wire
+
+This one maps almost exactly onto the diagram: brown → **L**, blue → **N** (and onward to the lamp), new wire from **Lout** → lamp's live, old switched-live (optional) → **S1**.
+
+**Shelly 1 Gen4** — O / I / SW / 12V / L / N
+
+This one splits things up differently — it separates "power for the module" from "the switched contact":
+
+- **L / N** — these power the Shelly's own electronics (its Wi-Fi/Zigbee radio, logic, etc.) — same as before, brown to L, blue to N
+- **I** — the input side of the internal relay contact
+- **O** — the output side of the internal relay contact — this is what actually switches
+- **SW** — optional sense input for a physical switch, same idea as S1
+- **12V** — not relevant to you; it's an alternative low-voltage power-in option if you're not using mains L/N (skip it)
+
+The key difference: on the Shelly, the relay contact (I/O) is *electrically separate* from the L/N power pins — it's a "dry" contact. For your lamp, you'd bridge a wire from **L** across to **I** (feeding the same permanent live into both the device's power and the relay's input), then **O** goes out to the lamp's live, same as Lout did on the Sonoff.
+
+So functionally, both devices need the same four things landed: live in, neutral, a switched-out wire to the lamp, and optionally the old switch wire on the sense terminal — the Shelly just requires one extra jumper wire (L to I) to tie its power-in and its switch-contact-in together, since they're not pre-bridged internally like on the Sonoff.
+:::
+
+:::tip[Question]
+So let's stick to the sonoff. How do I make sure that I can still operate the lights with the physical switches? And if I don't find that wire, will the relay and its functionality still work?
+:::
+
+:::info[Claude]
+**Wiring S1 for manual switch control**
+
+With a two-way (3-way) switch pair like yours, there's really only **one** relevant wire to find: the switched-live coming out of whichever switch box feeds up to the ceiling (this is the "brown" leaving one of the two switch boxes — the other switch box's brown is actually the incoming permanent live from the supply, not the switched output). That single wire reliably goes live when the lights should be on and dead when they should be off, no matter which of the two switches was flipped — that's the whole point of two-way wiring.
+
+At the ceiling, instead of landing that wire on the lamp's live (which you're now removing), you land it on the relay's **S1** terminal.
+
+One thing worth setting correctly once it's connected: most Zigbee firmware for this kind of relay lets you choose how S1 behaves — either "toggle/level" (mirrors whatever state the wire is currently in) or "edge/detached" (treats any change on the wire as a flip command, regardless of level). Edge/detached is the safer choice here, because once you're also controlling the relay from Zigbee/Home Assistant, the physical wire's live/dead state can drift out of sync with the lamp's actual state — edge mode keeps working correctly either way, since it just means "something changed, toggle it" rather than "match this exact state."
+
+**If you don't find or don't wire that switched-live wire at all**
+
+No problem — S1 is entirely optional. The relay and its Zigbee on/off functionality work completely normally without anything connected to S1; it only enables manual control. If you leave the old switched-live wire unconnected, just cap it off safely (wire nut or similar, tucked away, not left bare) — the physical wall switches will then simply do nothing when flipped, but the lights will still work perfectly fine via Zigbee/automations.
+:::
+
+:::tip[Question]
+How can I tell if the brown going to the lamp is a permanent live or a switched live
+:::
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+:::info[Claude]
+<Tabs>
+  <TabItem value="1" label="1" default>
+    ### Turn off the circuit first
+
+    Switch off the breaker feeding that lighting circuit before opening anything up or disconnecting wires. You'll need power back on briefly just for the voltage test below, so do that test with the ceiling fixture still connected but with care not to touch bare conductors.
+  </TabItem>
+  <TabItem value="2" label="2">
+    ### Set both switches to 'off'
+
+    Make sure the lights are currently off via the switches. This is the reference state you'll test against.
+  </TabItem>
+  <TabItem value="3" label="3">
+    ### Turn the power back on and test each brown wire
+
+    At the ceiling, using a non-contact voltage tester (safest) or a multimeter set to AC volts between the wire and neutral, test the brown wire in question. If it reads zero (no voltage) while the lights are off, that's the switched live. If it reads full mains voltage even though the lights are off, that's the permanent live.
+  </TabItem>
+  <TabItem value="4" label="4">
+    ### Flip a switch on and re-test to confirm
+
+    With the lights now on, test the same wire again. A switched-live wire will now show voltage; a permanent-live wire will read the same as before, since it's live the whole time regardless of switch position.
+  </TabItem>
+  <TabItem value="5" label="5">
+    ### Power off again before rewiring
+
+    Once you know which is which, kill the breaker again before disconnecting or reconnecting anything to the relay.
+  </TabItem>
+</Tabs>
+:::
+
+:::warning[A couple of things worth flagging alongside this]
+
+- You're working with a permanent live wire, so it stays live at all times regardless of switch position — treat every brown wire as potentially live until you've actually confirmed it's dead, and only ever touch conductors with insulated tools or after re-isolating the circuit.
+- If both lights are ganged together on one switched-live loop (as it sounds like from your first message), you really only need to identify this once — there should be just one switched-live wire feeding the shared loop, plus one permanent-live wire coming in from the supply side. If you find more than two brown wires at a given rose and aren't sure which is which, that's a good point to bring in an electrician rather than guessing, since misidentifying permanent live as neutral or switched live is the kind of mistake that causes real problems.
+:::

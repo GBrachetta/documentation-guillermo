@@ -37,13 +37,13 @@ details {
   margin-top: 2rem;
 }
 
-.theme-admonition-info > div:first-child {
+/* .theme-admonition-info > div:first-child {
   font-size: 0;
-}
+} */
 
-.theme-admonition-info > div:first-child svg {
+/* .theme-admonition-info > div:first-child svg {
   font-size: 1rem;
-}
+} */
 
 .markdown small {
   display: block;
