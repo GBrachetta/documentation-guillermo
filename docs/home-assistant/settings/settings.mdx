@@ -1,1 +1,14 @@
 # Settings
+
+## Fix to the copy command not working on the Terminal
+
+:::info
+For me the problem was that tmux was capturing mouse events. To disable this, edit .tmux.conf
+
+nano ~/.tmux.conf
+
+and change the line ‘set -g mouse on’ to
+set -g mouse off
+
+Save and exit with CTLR-X, Y, [Enter]. Then exit the session, and restart it.
+:::

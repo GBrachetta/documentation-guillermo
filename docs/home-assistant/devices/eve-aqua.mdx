@@ -82,3 +82,201 @@ Problem: Eve Aqua is Thread-only; direct HomeKit Controller pairing to HA failed
 - Watering shutoff: Handled entirely by the Eve Aqua's own firmware/timer (10 min default duration) — no HomeKit/HA action needed to turn it back off.
 - Limitation: One-directional only — HA can trigger watering, but doesn't receive live status back from the Eve Aqua (would need a second helper + reverse automation for that).
 </details>
+
+## Eve Aqua in Home Assistant: setup reference
+
+Oct 11, 2026 · @Guillermo
+
+## Overview
+
+Both Eve Aqua valves (Greenhouse and Garden, 2022 model) are now paired to Home Assistant through an ESP32 Bluetooth proxy, after normal pairing kept failing. They are shared back to Apple Home as sprinklers by a separate HomeKit bridge, "HASS Bridge Aqua", defined in `configuration.yaml`. Each valve also has a "Last watered" timestamp sensor on its device page. This page records the proxy, the commissioning sequence, the bridge configuration and the sensor setup.
+
+## Background
+
+The 2022 Eve Aqua cannot be upgraded to Matter. It works over Bluetooth LE and Thread, and a HomeKit accessory can only be paired to one controller at a time, so it first has to be removed from Apple Home.
+
+After removal, Home Assistant discovered the Aqua as a HomeKit Device, but the installation failed every time after the pairing code was entered. The same sequence was repeated several times: reset the Aqua, add it to Apple Home, remove it without a reset, add it to Home Assistant. It failed the same way each time and worked only once, a couple of weeks earlier. A note was added to home-assistant/core issue #176816, which may be related.
+
+At that point Home Assistant had no Bluetooth at all. The network is a Deco mesh with IPv6 disabled.
+
+## ESP32 Bluetooth proxy
+
+An ESP32 was flashed as an ESPHome Bluetooth proxy so Home Assistant could reach the Aqua over Bluetooth LE without Bluetooth on the Home Assistant host.
+
+| Setting | Value |
+| --- | --- |
+| Board | ESP32-WROOM-32U DevKitC V4 (USB-C, with external antenna kit), CP2102 USB-serial chip |
+| Firmware | ESPHome Bluetooth proxy |
+| Device name | esp32-ble-proxy (friendly name ESP32 BLE Proxy) |
+| Scanning mode | Active |
+| In Home Assistant | Device "ESP32 BLE Proxy", area Office, with Factory reset and Safe mode boot buttons |
+
+ESPHome configuration of the proxy. The API key shown is a placeholder, and the Wi-Fi credentials come from `secrets.yaml`:
+
+```yaml
+substitutions:
+  name: esp32-ble-proxy
+  friendly_name: ESP32 BLE Proxy
+
+packages:
+  esphome.bluetooth-proxy: "github://esphome/bluetooth-proxies/esp32-generic/esp32-generic.yaml@main"
+
+esphome:
+  name: ${name}
+  name_add_mac_suffix: false
+  friendly_name: ${friendly_name}
+
+api:
+  encryption:
+    key: "encryption key secret"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+```
+
+The proxy only needs power while pairing. It can be switched off afterwards.
+
+## Commissioning steps
+
+1. Flash the ESP32 as an ESPHome Bluetooth proxy named "esp32-ble-proxy" with active scanning, and add it to Home Assistant.
+2. Remove the Aqua from Apple Home.
+3. Home Assistant discovers the Aqua as a HomeKit Device. Enter its pairing code. With the proxy in place the pairing completed.
+4. Rename the entities to the pattern below. The Aqua also shows up as a Thread child device.
+
+Each Aqua ends up with these entities in Home Assistant (shown for the Greenhouse; the Garden uses `eve_aqua_garden`):
+
+| Entity | Purpose |
+| --- | --- |
+| `switch.eve_aqua_greenhouse` | Valve on and off |
+| `number.eve_aqua_greenhouse_duration` | Watering duration in seconds |
+| `sensor.eve_aqua_greenhouse_battery` | Battery level |
+| `binary_sensor.eve_aqua_greenhouse_problem` | Problem flag |
+| `switch.eve_aqua_greenhouse_lock_physical_controls` | Lock the buttons on the Aqua |
+| `sensor.eve_aqua_greenhouse_thread_status` and `_thread_capabilities` | Thread role (child, sleepy) |
+
+The switches were originally named after the devices: "Eve Aqua 0D20" is the Greenhouse and "Eve Aqua 070B" is the Garden.
+
+## Sharing the Aqua with Apple Home
+
+A separate HomeKit bridge, "HASS Bridge Aqua", exposes both valves to Apple Home as sprinklers (the sprinkler valve type from Home Assistant 2026.10). Before this, the Aqua was bridged through `input_boolean` helpers named `eve_aqua_garden` and `eve_aqua_greenhouse`. The bridge listens on port 21067, next to the other two bridges on 21064 (HASS Bridge) and 21066 (HASS Bridge NS).
+
+The bridge, as defined in `configuration.yaml`:
+
+```yaml
+homekit:
+  - name: HASS Bridge Aqua
+    port: 21067
+    filter:
+      include_entities:
+        - switch.eve_aqua_greenhouse
+        - switch.eve_aqua_garden
+    entity_config:
+      switch.eve_aqua_greenhouse:
+        name: Greenhouse
+        type: sprinkler
+        linked_valve_duration: number.eve_aqua_greenhouse_duration
+        linked_valve_end_time: sensor.eve_aqua_greenhouse_end_time
+      switch.eve_aqua_garden:
+        name: Garden
+        type: sprinkler
+        linked_valve_duration: number.eve_aqua_garden_duration
+        linked_valve_end_time: sensor.eve_aqua_garden_end_time
+```
+
+`linked_valve_end_time` points at two trigger-based template sensors, also in `configuration.yaml`. Each is set to now plus the duration when its valve turns on, and to now when it turns off. The bridge needs them to keep working.
+
+```yaml
+template:
+  - triggers:
+      - trigger: state
+        entity_id: switch.eve_aqua_greenhouse
+        to:
+          - "on"
+          - "off"
+    sensor:
+      - name: Eve Aqua Greenhouse end time
+        unique_id: eve_aqua_greenhouse_end_time
+        device_class: timestamp
+        state: >
+          {% if trigger.to_state.state == 'on' %}
+            {{ (now() + timedelta(seconds=states('number.eve_aqua_greenhouse_duration') | int(0))).isoformat() }}
+          {% else %}
+            {{ now().isoformat() }}
+          {% endif %}
+  - triggers:
+      - trigger: state
+        entity_id: switch.eve_aqua_garden
+        to:
+          - "on"
+          - "off"
+    sensor:
+      - name: Eve Aqua Garden end time
+        unique_id: eve_aqua_garden_end_time
+        device_class: timestamp
+        state: >
+          {% if trigger.to_state.state == 'on' %}
+            {{ (now() + timedelta(seconds=states('number.eve_aqua_garden_duration') | int(0))).isoformat() }}
+          {% else %}
+            {{ now().isoformat() }}
+          {% endif %}
+```
+
+The live bridge entry also lists a battery sensor, a low battery threshold of 20, and manufacturer, model and firmware fields. They are not in the file, so Home Assistant appears to fill them in itself.
+
+Adding the bridge to Apple Home: after editing `configuration.yaml` and restarting Home Assistant, a new bridge is exposed. Scanning its QR code from the Apple Home app added the bridge together with both accessories.
+
+In Apple Home the accessories cannot be renamed or moved. Their names come from the `name` set in `entity_config`, and their location is fixed to wherever the bridge was added. To place them, assign a zone to the bridge under Settings, Bridges. The accessories move with it.
+
+## Last watered sensors
+
+Each valve has a "Last watered" timestamp sensor on its device page (area Garden). When the valve switch turns on, an automation stores the time in an `input_datetime` helper, and a UI Template helper attached to the Aqua device shows that value. The store is needed because a UI Template helper can join a device but cannot remember anything itself.
+
+| Piece | Greenhouse | Garden |
+| --- | --- | --- |
+| Storage helper | `input_datetime.eve_aqua_greenhouse_last_watered_store` | `input_datetime.eve_aqua_garden_last_watered_store` |
+| Automation | `automation.eve_aqua_greenhouse_record_last_watered` | `automation.eve_aqua_garden_record_last_watered` |
+| Sensor | `sensor.garden_eve_aqua_greenhouse_last_watered` | `sensor.garden_eve_aqua_garden_last_watered` |
+| Template helper config entry ID | `01M4MY2D1SHEWY3PEENDMQN30G` | `01M4MY74CX93MGQCPJ2TYCT3FD` |
+| Aqua device ID | `e1a039a9cd563afc681b4379687000f7` | `ae26dcc470cdff66c00175f7fd1f37c9` |
+
+The storage helper is an `input_datetime` with date and time enabled and no initial value, so it restores after restarts. Greenhouse automation (the Garden one is identical with its own entities):
+
+```yaml
+alias: Eve Aqua Greenhouse - record last watered
+description: Stores the time the Eve Aqua Greenhouse valve was last turned on
+mode: queued
+triggers:
+  - trigger: state
+    entity_id: switch.eve_aqua_greenhouse
+    to: "on"
+actions:
+  - action: input_datetime.set_datetime
+    target:
+      entity_id: input_datetime.eve_aqua_greenhouse_last_watered_store
+    data:
+      datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+```
+
+The sensor is a UI Template helper (Settings, Devices & services, Helpers, Template, sensor) with device class Timestamp and the Aqua as its device. State template:
+
+```jinja
+{% set t = state_attr('input_datetime.eve_aqua_greenhouse_last_watered_store', 'timestamp') %}
+{{ as_datetime(t) if t is not none and t > 86400 else none }}
+```
+
+Notes:
+
+- It records when a watering starts. To record the end, trigger on `from: "on"` and `to: "off"`.
+- A sensor shows Unknown until its valve has run once. A never-set `input_datetime` holds 1970-01-01, which the `> 86400` check filters out.
+- A trigger-based YAML template sensor would also remember the time but cannot attach to another integration's device.
+- The Garden helper is titled "Last watered (Garden)" because "Last watered" was taken; its entity was renamed to display as "Last watered". The `water_greenhouse` and `water_garden` automations and the `end_time` sensors are untouched.
+- HomeKit has no date type, so the timestamp is visible in Home Assistant only. The Eve app's history needs the Aqua paired to Apple Home. A yes/no "watered recently" sensor and an "hours since" number were considered for Apple Home and not built.
+
+To undo, per valve: delete the Template helper, then the automation, then the `input_datetime` store.
+
+## Troubleshooting and open items
+
+If Home Assistant again fails to install the HomeKit Device after the pairing code, keep the ESP32 BLE proxy powered and online during pairing, since pairing only worked once the proxy was in place. It can be switched off afterwards. Core issue #176816 tracks a similar failure.
+
+To add another Aqua, follow the same sequence, rename its entities to the same pattern, then add its switch to `include_entities` and its own block to `entity_config` in the bridge, plus a matching end time template sensor.

@@ -1,0 +1,204 @@
+# Good Night!
+
+# Home Assistant “Good Night!” — Complete Setup Guide
+
+This guide documents your current `Good Night!` automation, including the Home Assistant configuration, the iPhone Shortcut that can call it, and how to make sure it does nothing when you're away from home.
+
+The iPhone instructions below describe how to build the Shortcut from scratch; I haven't verified your existing iPhone Shortcut or personal automation, so these steps are a setup guide rather than a record of an existing configuration.
+
+## 1. What the automation does
+
+When triggered between 23:00 and 06:00, and only when Home Assistant detects that you're home, the automation:
+
+1. Turns off the house lights, with exceptions.
+2. Arms the Aqara security system in night mode.
+3. Locks both smart locks.
+4. Sets the temperature to 18 °C.
+5. Closes both roller shades.
+
+### Exceptions for lights
+
+- If Giulia or Elisa is home, these lights are preserved:
+  - `light.attic_girls_light`
+  - `light.lightstrip_elisa`
+  - `light.lightstrip_giulia`
+- If either of these bathroom entities is already on, it is preserved:
+  - `light.bathroom_relay_light`
+  - `light.bathroom_relay_extractor`
+
+## 2. Current Home Assistant configuration
+
+| Setting           | Value                                    |
+| ----------------- | ---------------------------------------- |
+| Automation        | `automation.good_night_improved`         |
+| Name              | `Good Night!`                            |
+| Trigger           | Webhook, HTTP POST                       |
+| Webhook ID        | `goodnight_charging_iPhone_guille_9f3k3` |
+| Local-only        | Enabled                                  |
+| Allowed time      | 23:00–06:00                              |
+| Required presence | `person.guille` = `home`                 |
+| Mode              | `single`                                 |
+
+The time window crosses midnight, so the condition uses an OR: after 23:00 or before 06:00. The home-presence requirement is an additional condition, so both the time window and home presence must pass.
+
+## 3. iPhone setup — Apple Shortcuts
+
+The intended arrangement is that the iPhone detects when charging starts and sends a POST request to Home Assistant. Home Assistant then decides whether it is safe to run the bedtime routine.
+
+### Step 1 — Create the Shortcut
+
+1. Open Shortcuts on your iPhone.
+2. Tap + to create a new Shortcut.
+3. Add the action Get Contents of URL.
+4. Tap the URL field and enter your Home Assistant's local address, followed by the webhook path.
+
+For example, replace the IP address with your actual Home Assistant local IP:
+
+```
+http://192.168.1.100:8123/api/webhook/goodnight_charging_iPhone_guille_9f3k3
+```
+
+5. Expand the action's options and set Method to `POST`.
+6. Leave the request body and headers empty.
+7. Name the Shortcut `Good Night`.
+
+Important: use your actual local IP address, not the example above. Because the webhook is local-only, it should be called over your home network. Do not switch off local-only just to make remote calls work.
+
+### Step 2 — Automatically run it when charging starts
+
+In the Shortcuts app:
+
+1. Open Automation.
+2. Create a new personal automation.
+3. Choose Charger as the trigger.
+4. Select Is Connected.
+5. Choose Run Immediately, or the equivalent option on your iOS version.
+6. Add the action to Run Shortcut and select `Good Night`.
+7. Save the personal automation.
+
+Menu wording can vary slightly between iOS versions.
+
+### Step 3 — Why this is safe when you're away
+
+The iPhone Shortcut does not need to know whether you're home. The safeguards are enforced by Home Assistant:
+
+| Situation                 | Expected result          |
+| ------------------------- | ------------------------ |
+| Plug in at home, at 23:30 | Runs the bedtime routine |
+| Plug in away from home    | Does not run             |
+| Plug in at home at 20:00  | Does not run             |
+| Plug in at home at 05:30  | Runs the bedtime routine |
+
+If the iPhone is away from your home network, the local webhook address won't normally be reachable. Even if a request does reach Home Assistant, the presence and time conditions still protect the actions.
+
+## 4. Current automation YAML
+
+This is the current configuration read back from Home Assistant after adding the home-presence condition.
+
+```YAML
+id: "1789249766910"
+alias: Good Night!
+description: ""
+triggers:
+  - trigger: state
+    entity_id:
+      - sensor.iphone_15_guille_battery_state
+    to: "Charging"
+    enabled: false
+  - trigger: webhook
+    webhook_id: goodnight_charging_iPhone_guille_9f3k3
+    allowed_methods:
+      - POST
+    local_only: true
+conditions:
+  - condition: or
+    conditions:
+      - condition: time
+        after: "23:00:00"
+      - condition: time
+        before: "06:00:00"
+    enabled: true
+  - condition: state
+    entity_id: person.guille
+    state: home
+actions:
+  - action: light.turn_off
+    target:
+      entity_id: >-
+        {% set girls_home =
+          is_state('person.giulia', 'home') or
+          is_state('person.elisa', 'home') %}
+
+        {% set ns = namespace(exclude=[]) %}
+        {% if girls_home %}
+          {% set ns.exclude = ns.exclude + [
+            'light.attic_girls_light',
+            'light.lightstrip_elisa',
+            'light.lightstrip_giulia'
+          ] %}
+        {% endif %}
+        {% for entity in [
+          'light.bathroom_relay_light',
+          'light.bathroom_relay_extractor'
+        ] %}
+          {% if is_state(entity, 'on') %}
+            {% set ns.exclude = ns.exclude + [entity] %}
+          {% endif %}
+        {% endfor %}
+        {{ states.light
+          | map(attribute='entity_id')
+          | reject('in', ns.exclude)
+          | list }}
+    data: {}
+  - action: alarm_control_panel.alarm_arm_night
+    target:
+      entity_id: alarm_control_panel.living_room_aqara_g3_security_system
+    data: {}
+  - action: lock.lock
+    target:
+      entity_id:
+        - lock.smart_lock_pro
+        - lock.smart_lock_pro_2
+    data: {}
+    enabled: true
+  - action: climate.set_temperature
+    target:
+      entity_id: climate.wireless_temperature_sensor_x
+    data:
+      temperature: 18
+  - action: cover.close_cover
+    target:
+      entity_id:
+        - cover.aqara_roller_shade_driver_e1
+        - cover.aqara_roller_shade_driver_e1_2
+    data: {}
+mode: single
+```
+
+Note that the old battery-state trigger is still present but disabled. The active trigger is the webhook.
+
+## 5. Backup and recovery
+
+Before the home-presence condition was added, I created this recovery copy:
+
+```
+automation.automation.good_night_improved.20261014_111547.yaml
+```
+
+It contains the original automation, including the original time condition and actions, but without the new `person.guille` condition.
+
+If the change ever causes a problem, the backup can be restored through the Home Assistant backup tool or by restoring the original configuration through the automation editor. Check the current configuration before restoring so you don't accidentally remove any later improvements.
+
+## 6. Testing and troubleshooting
+
+- Check the Shortcut: confirm the URL is correct and the method is `POST`.
+- Check the local IP: make sure it points to the current Home Assistant address.
+- Check presence: `person.guille` must report `home`.
+- Check the time: Home Assistant must be within the 23:00–06:00 window.
+- Inspect traces: open `Settings → Automations & scenes → Good Night! → Traces` to see whether a trigger was rejected by a condition.
+
+For the first live test, choose a time between 23:00 and 06:00 when you're home and can verify the locks, alarm and shades. Do not test the webhook casually during those hours: a valid request can execute the real routine.
+
+Keep the webhook ID private. Anyone who knows it and can reach the local endpoint may be able to invoke the automation.
+
+Final distinction: the Home Assistant safeguards are already configured and verified. The iPhone Shortcut and its charging-triggered personal automation are documented above as steps to create; I have not inspected or modified those on your iPhone.
